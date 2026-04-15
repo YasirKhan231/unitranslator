@@ -4,7 +4,6 @@ import { verifyToken } from "../../../../lib/auth";
 import dbConnect from "../../../../lib/mongodb";
 import Translation from "../../../../models/Translation";
 import Note from "../../../../models/Note";
-import Translation from "../../../../models/Translation";
 
 export async function GET(req) {
   await dbConnect();
