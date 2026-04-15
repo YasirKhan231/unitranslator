@@ -72,7 +72,7 @@ export default function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
                   required
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-gray-900 placeholder-gray-400"
                 />
               </div>
             </div>
@@ -93,7 +93,7 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                  className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-gray-900 placeholder-gray-400"
                 />
                 <button
                   type="button"
@@ -144,17 +144,12 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Divider */}
+          {/* Divider - Removed Google Sign In */}
           <div className="my-6 flex items-center gap-3">
             <div className="flex-1 h-px bg-gray-200"></div>
             <span className="text-sm text-gray-500">or</span>
             <div className="flex-1 h-px bg-gray-200"></div>
           </div>
-
-          {/* Google Sign In */}
-          <button className="w-full py-2.5 border border-gray-300 rounded-lg font-medium text-gray-900 hover:bg-gray-50 transition">
-            Continue with Google
-          </button>
         </div>
 
         {/* Footer Links */}

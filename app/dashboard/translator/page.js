@@ -6,7 +6,7 @@ import { useState } from "react";
 export default function TranslatorPage() {
   const [text, setText] = useState("");
   const [output, setOutput] = useState("");
-  const [fromLang, setFromLang] = useState("auto");
+  const [fromLang, setFromLang] = useState("en");
   const [toLang, setToLang] = useState("en");
   const [loading, setLoading] = useState(false);
   const [saveAsNote, setSaveAsNote] = useState(false);
