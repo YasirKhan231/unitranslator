@@ -1,8 +1,8 @@
 // app/api/notes/[id]/route.js
 import { NextResponse } from "next/server";
-import { verifyToken } from "../../.././lib/auth";
-import dbConnect from "../../.././lib/mongodb";
-import Note from "../../.././models/Note";
+import { verifyToken } from "../../../../lib/auth";
+import dbConnect from "../../../../lib/mongodb";
+import Note from "../../../../models/Note";
 
 export async function PUT(req, { params }) {
   await dbConnect();
