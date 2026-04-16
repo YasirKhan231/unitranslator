@@ -1,70 +1,47 @@
-const { createServer } = require("http");
-const { parse } = require("url");
-const next = require("next");
-const { Server } = require("socket.io");
+io.on("connection", (socket) => {
+  console.log("Client connected:", socket.id);
 
-const dev = process.env.NODE_ENV !== "production";
-const app = next({ dev });
-const handle = app.getRequestHandler();
+  // Map userId -> socketId
+  const userSocketMap = {};
 
-app.prepare().then(() => {
-  const httpServer = createServer((req, res) => {
-    const parsedUrl = parse(req.url, true);
-    handle(req, res, parsedUrl);
+  socket.on("user:online", (userId) => {
+    userSocketMap[userId] = socket.id;
+    socket.userId = userId;
+    socket.join(`user:${userId}`); // ✅ Each user joins their own room
+    const onlineUsers = Object.keys(userSocketMap);
+    io.emit("users:online", onlineUsers);
   });
 
-  const io = new Server(httpServer, {
-    cors: { origin: "*", methods: ["GET", "POST"] },
+  socket.on("chat:join", (chatId) => {
+    socket.join(`chat:${chatId}`);
   });
 
-  // Store online users: { userId -> socketId }
-  const onlineUsers = new Map();
+  socket.on("chat:leave", (chatId) => {
+    socket.leave(`chat:${chatId}`);
+  });
 
-  io.on("connection", (socket) => {
-    console.log("Socket connected:", socket.id);
+  socket.on("message:send", ({ chatId, message, recipientId }) => {
+    // Send to everyone in chat room except sender
+    socket.to(`chat:${chatId}`).emit("message:receive", message);
 
-    // Register user as online
-    socket.on("user:online", (userId) => {
-      onlineUsers.set(userId, socket.id);
-      socket.userId = userId;
-      io.emit("users:online", Array.from(onlineUsers.keys()));
-    });
-
-    // Join a chat room
-    socket.on("chat:join", (chatId) => {
-      socket.join(chatId);
-    });
-
-    // Leave a chat room
-    socket.on("chat:leave", (chatId) => {
-      socket.leave(chatId);
-    });
-
-    // Send message
-    socket.on("message:send", (data) => {
-      // data: { chatId, message }
-      // Broadcast to everyone in the room including sender
-      io.to(data.chatId).emit("message:receive", data.message);
-    });
-
-    // Typing indicator
-    socket.on("typing:start", ({ chatId, userName }) => {
-      socket.to(chatId).emit("typing:start", { userName });
-    });
-
-    socket.on("typing:stop", ({ chatId }) => {
-      socket.to(chatId).emit("typing:stop");
-    });
-
-    socket.on("disconnect", () => {
-      if (socket.userId) {
-        onlineUsers.delete(socket.userId);
-        io.emit("users:online", Array.from(onlineUsers.keys()));
-      }
+    // ✅ Also notify recipient's personal room to refresh sidebar
+    socket.to(`user:${recipientId}`).emit("chat:newMessage", {
+      chatId,
+      message,
     });
   });
 
-  httpServer.listen(3000, () => {
-    console.log("> Ready on http://localhost:3000");
+  socket.on("typing:start", ({ chatId, userName }) => {
+    socket.to(`chat:${chatId}`).emit("typing:start", { userName });
+  });
+
+  socket.on("typing:stop", ({ chatId }) => {
+    socket.to(`chat:${chatId}`).emit("typing:stop");
+  });
+
+  socket.on("disconnect", () => {
+    delete userSocketMap[socket.userId];
+    const onlineUsers = Object.keys(userSocketMap);
+    io.emit("users:online", onlineUsers);
   });
 });

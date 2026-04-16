@@ -6,7 +6,7 @@ import { getSocket } from "../../../lib/socket";
 export default function ChatPage() {
   const [currentUser, setCurrentUser] = useState(null);
   const [recentChats, setRecentChats] = useState([]);
-  const [activeChat, setActiveChat] = useState(null);   // { chatId, otherUser }
+  const [activeChat, setActiveChat] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [searchEmail, setSearchEmail] = useState("");
@@ -16,7 +16,6 @@ export default function ChatPage() {
   const [isTyping, setIsTyping] = useState(false);
   const [typingUser, setTypingUser] = useState("");
   const [onlineUsers, setOnlineUsers] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [msgLoading, setMsgLoading] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
 
@@ -25,15 +24,22 @@ export default function ChatPage() {
   const socketRef = useRef(null);
   const activeChatRef = useRef(null);
 
-  // Keep ref in sync
   useEffect(() => { activeChatRef.current = activeChat; }, [activeChat]);
 
-  // Fetch current user from cookie/session
+  // Fetch current user
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
       .then((d) => { if (d.user) setCurrentUser(d.user); })
       .catch(() => {});
+  }, []);
+
+  const fetchRecentChats = useCallback(async () => {
+    try {
+      const res = await fetch("/api/chat/recent");
+      const data = await res.json();
+      if (data.recentChats) setRecentChats(data.recentChats);
+    } catch {}
   }, []);
 
   // Init socket
@@ -46,16 +52,25 @@ export default function ChatPage() {
 
     socket.on("users:online", (users) => setOnlineUsers(users));
 
-    socket.on("message:receive", (message) => {
+    // ✅ Message received from other user
+    socket.on("message:receive", async (message) => {
       const chat = activeChatRef.current;
       if (chat && message.chatId === chat.chatId) {
         setMessages((prev) => {
-          // Avoid duplicates (we already added optimistically for sender)
           const exists = prev.some((m) => m._id === message._id);
           return exists ? prev : [...prev, message];
         });
+        // Auto mark as read since user is viewing this chat
+        await fetch(`/api/chat/read/${chat.chatId}`, { method: "POST" });
+        fetchRecentChats();
+      } else {
+        // Not viewing this chat — just refresh sidebar for unread badge
+        fetchRecentChats();
       }
-      // Refresh recent chats for unread count
+    });
+
+    // ✅ Recipient gets notified of new chat appearing in their sidebar
+    socket.on("chat:newMessage", () => {
       fetchRecentChats();
     });
 
@@ -71,18 +86,11 @@ export default function ChatPage() {
     return () => {
       socket.off("users:online");
       socket.off("message:receive");
+      socket.off("chat:newMessage");
       socket.off("typing:start");
       socket.off("typing:stop");
     };
-  }, [currentUser]);
-
-  const fetchRecentChats = useCallback(async () => {
-    try {
-      const res = await fetch("/api/chat/recent");
-      const data = await res.json();
-      if (data.recentChats) setRecentChats(data.recentChats);
-    } catch {}
-  }, []);
+  }, [currentUser, fetchRecentChats]);
 
   useEffect(() => {
     if (currentUser) fetchRecentChats();
@@ -92,6 +100,7 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // ✅ Open chat + mark messages as read
   const openChat = async (otherUser, chatId = null) => {
     setMsgLoading(true);
     try {
@@ -107,7 +116,6 @@ export default function ChatPage() {
         resolvedChatId = data.chat._id;
       }
 
-      // Leave previous room
       if (activeChatRef.current) {
         socketRef.current?.emit("chat:leave", activeChatRef.current.chatId);
       }
@@ -115,11 +123,14 @@ export default function ChatPage() {
       setActiveChat({ chatId: resolvedChatId, otherUser });
       socketRef.current?.emit("chat:join", resolvedChatId);
 
-      // Load messages
       const msgRes = await fetch(`/api/chat/messages/${resolvedChatId}`);
       const msgData = await msgRes.json();
       setMessages(msgData.messages || []);
-      fetchRecentChats();
+
+      // ✅ Mark all messages as read when opening chat
+      await fetch(`/api/chat/read/${resolvedChatId}`, { method: "POST" });
+
+      fetchRecentChats(); // clears unread badge
     } catch (err) {
       console.error(err);
     } finally {
@@ -133,7 +144,6 @@ export default function ChatPage() {
     const content = newMessage.trim();
     setNewMessage("");
 
-    // Stop typing
     socketRef.current?.emit("typing:stop", { chatId: activeChat.chatId });
 
     try {
@@ -144,11 +154,11 @@ export default function ChatPage() {
       });
       const data = await res.json();
       if (data.message) {
-        // Optimistically add to UI
         setMessages((prev) => [...prev, data.message]);
-        // Broadcast via socket to other participants
+        // ✅ Pass recipientId so server notifies their sidebar
         socketRef.current?.emit("message:send", {
           chatId: activeChat.chatId,
+          recipientId: activeChat.otherUser._id,
           message: { ...data.message, chatId: activeChat.chatId },
         });
       }
@@ -224,7 +234,6 @@ export default function ChatPage() {
     <div className="flex h-[calc(100vh-64px)] bg-white rounded-xl border border-gray-200 overflow-hidden">
       {/* ── Sidebar ── */}
       <div className="w-80 border-r border-gray-200 flex flex-col flex-shrink-0">
-        {/* Header */}
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Messages</h2>
           <button
@@ -239,7 +248,6 @@ export default function ChatPage() {
           </button>
         </div>
 
-        {/* Recent chats list */}
         <div className="flex-1 overflow-y-auto">
           {recentChats.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-400 px-6 text-center">
@@ -247,10 +255,7 @@ export default function ChatPage() {
                 <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
               </svg>
               <p className="text-sm">No conversations yet</p>
-              <button
-                onClick={() => setShowFindDialog(true)}
-                className="mt-3 text-sm text-gray-900 font-medium underline"
-              >
+              <button onClick={() => setShowFindDialog(true)} className="mt-3 text-sm text-gray-900 font-medium underline">
                 Find someone to chat with
               </button>
             </div>
@@ -263,7 +268,6 @@ export default function ChatPage() {
                   activeChat?.chatId === rc.chatId?.toString() ? "bg-gray-100" : ""
                 }`}
               >
-                {/* Avatar */}
                 <div className="relative flex-shrink-0">
                   <div className="w-11 h-11 rounded-full bg-gray-900 text-white flex items-center justify-center font-semibold text-sm">
                     {rc.user?.name?.[0]?.toUpperCase() || "?"}
@@ -272,7 +276,6 @@ export default function ChatPage() {
                     <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full" />
                   )}
                 </div>
-                {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-center">
                     <span className="font-medium text-gray-900 text-sm truncate">{rc.user?.name}</span>
@@ -284,6 +287,7 @@ export default function ChatPage() {
                     <p className="text-xs text-gray-500 truncate">
                       {rc.lastMessage?.content || "No messages yet"}
                     </p>
+                    {/* ✅ Unread badge — clears after opening chat */}
                     {rc.unreadCount > 0 && (
                       <span className="ml-2 flex-shrink-0 bg-gray-900 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                         {rc.unreadCount}
@@ -362,7 +366,7 @@ export default function ChatPage() {
                         }`}
                       >
                         <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                        <p className={`text-xs mt-1 ${isMine ? "text-gray-400" : "text-gray-400"} text-right`}>
+                        <p className="text-xs mt-1 text-gray-400 text-right">
                           {formatTime(msg.createdAt)}
                         </p>
                       </div>
@@ -371,18 +375,13 @@ export default function ChatPage() {
                 })
               )}
 
-              {/* Typing indicator */}
               {isTyping && (
                 <div className="flex justify-start">
                   <div className="bg-white border border-gray-200 px-4 py-2 rounded-2xl rounded-bl-sm text-sm text-gray-500 flex items-center gap-1">
                     <span>{typingUser} is typing</span>
                     <span className="flex gap-0.5 ml-1">
                       {[0, 1, 2].map((i) => (
-                        <span
-                          key={i}
-                          className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"
-                          style={{ animationDelay: `${i * 0.15}s` }}
-                        />
+                        <span key={i} className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
                       ))}
                     </span>
                   </div>
@@ -452,15 +451,11 @@ export default function ChatPage() {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
                     <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                   </svg>
-                ) : (
-                  "Search"
-                )}
+                ) : "Search"}
               </button>
             </div>
 
-            {searchError && (
-              <p className="text-sm text-red-600 mb-4">{searchError}</p>
-            )}
+            {searchError && <p className="text-sm text-red-600 mb-4">{searchError}</p>}
 
             {searchResult && (
               <div className="flex items-center gap-3 p-3 border border-gray-200 rounded-xl">
