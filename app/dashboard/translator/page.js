@@ -1,6 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
+
+const VOICES = [
+  { id: "EXAVITQu4vr4xnSDxMaL", name: "Bella", gender: "Female", style: "Soft & Gentle" },
+  { id: "ErXwobaYiN019PkySvjV", name: "Antoni", gender: "Male", style: "Well-rounded" },
+  { id: "pNInz6obpgDQGcFmaJgB", name: "Adam", gender: "Male", style: "Narration & News" },
+];
 
 export default function TranslatorPage() {
   const [text, setText] = useState("");
@@ -10,6 +16,18 @@ export default function TranslatorPage() {
   const [loading, setLoading] = useState(false);
   const [saveAsNote, setSaveAsNote] = useState(false);
   const [error, setError] = useState("");
+
+  // TTS states
+  const [selectedVoice, setSelectedVoice] = useState(VOICES[0].id);
+  const [filterGender, setFilterGender] = useState("All");
+  const [ttsLoading, setTtsLoading] = useState(false);
+  const [audioUrl, setAudioUrl] = useState(null);
+  const [ttsError, setTtsError] = useState("");
+  const audioRef = useRef(null);
+
+  const filteredVoices = VOICES.filter(
+    (v) => filterGender === "All" || v.gender === filterGender
+  );
 
   const languages = [
     { code: "en", name: "English" },
@@ -63,6 +81,9 @@ export default function TranslatorPage() {
     setLoading(true);
     setError("");
     setOutput("");
+    // Reset TTS when translating again
+    setAudioUrl(null);
+    setTtsError("");
 
     try {
       const res = await fetch("/api/translate", {
@@ -91,17 +112,64 @@ export default function TranslatorPage() {
     }
   };
 
+  const handleConvertToSpeech = async () => {
+    if (!output.trim()) return;
+
+    setTtsLoading(true);
+    setTtsError("");
+    setAudioUrl(null);
+
+    try {
+      const res = await fetch("/api/text-to-speech", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: output,
+          voiceId: selectedVoice,
+          modelId: "eleven_multilingual_v2",
+          stability: 0.5,
+          similarityBoost: 0.75,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Conversion failed");
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      setAudioUrl(url);
+    } catch (err) {
+      setTtsError(err.message || "Something went wrong. Please try again.");
+    } finally {
+      setTtsLoading(false);
+    }
+  };
+
+  const handleDownload = () => {
+    if (!audioUrl) return;
+    const a = document.createElement("a");
+    a.href = audioUrl;
+    a.download = "translated-speech.mp3";
+    a.click();
+  };
+
   const swapLanguages = () => {
     setFromLang(toLang);
     setToLang(fromLang);
     setText(output);
     setOutput(text);
+    setAudioUrl(null);
+    setTtsError("");
   };
 
   const clearText = () => {
     setText("");
     setOutput("");
     setError("");
+    setAudioUrl(null);
+    setTtsError("");
   };
 
   return (
@@ -265,6 +333,142 @@ export default function TranslatorPage() {
           </button>
         </div>
       </div>
+
+      {/* ── Text-to-Speech Panel (shown only after translation) ── */}
+      {output && !loading && (
+        <div className="mt-6 bg-white rounded-xl border border-gray-200 p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-700">
+              <path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+            </svg>
+            <h2 className="text-lg font-semibold text-gray-900">Convert Translation to Speech</h2>
+          </div>
+          <p className="text-sm text-gray-500 mb-5">
+            Listen to your translated text using AI voices.
+          </p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Translated text preview + convert button */}
+            <div className="lg:col-span-2 space-y-4">
+              {/* Character count + preview */}
+              <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                    Translated Text
+                  </span>
+                  <span className={`text-xs font-medium ${output.length > 4500 ? "text-red-500" : "text-gray-400"}`}>
+                    {output.length} / 5000 chars
+                  </span>
+                </div>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap font-mono line-clamp-4">
+                  {output}
+                </p>
+              </div>
+
+              {/* TTS Error */}
+              {ttsError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                  {ttsError}
+                </div>
+              )}
+
+              {/* Convert button */}
+              <button
+                onClick={handleConvertToSpeech}
+                disabled={ttsLoading || output.length > 5000}
+                className="w-full py-3 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {ttsLoading ? (
+                  <>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
+                      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                    </svg>
+                    Generating Audio...
+                  </>
+                ) : (
+                  <>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                    Convert to Speech
+                  </>
+                )}
+              </button>
+
+              {/* Audio Player */}
+              {audioUrl && (
+                <div className="rounded-xl border border-gray-200 p-4 bg-white">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-sm font-medium text-gray-700">Generated Audio</span>
+                    <button
+                      onClick={handleDownload}
+                      className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg px-3 py-1.5 hover:border-gray-500 transition"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                      </svg>
+                      Download MP3
+                    </button>
+                  </div>
+                  <audio ref={audioRef} controls src={audioUrl} className="w-full" />
+                </div>
+              )}
+            </div>
+
+            {/* Voice Picker */}
+            <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 h-fit">
+              <label className="text-sm font-medium text-gray-700 mb-3 block">Choose Voice</label>
+
+              {/* Gender Filter */}
+              <div className="flex gap-2 mb-4">
+                {["All", "Female", "Male"].map((g) => (
+                  <button
+                    key={g}
+                    onClick={() => setFilterGender(g)}
+                    className={`flex-1 text-xs py-1.5 rounded-lg border transition font-medium ${
+                      filterGender === g
+                        ? "bg-gray-900 text-white border-gray-900"
+                        : "border-gray-200 text-gray-600 hover:border-gray-400 bg-white"
+                    }`}
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+
+              {/* Voice List */}
+              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                {filteredVoices.map((voice) => (
+                  <button
+                    key={voice.id}
+                    onClick={() => {
+                      setSelectedVoice(voice.id);
+                      setAudioUrl(null); // reset audio when voice changes
+                    }}
+                    className={`w-full text-left p-3 rounded-lg border transition ${
+                      selectedVoice === voice.id
+                        ? "border-gray-900 bg-white"
+                        : "border-gray-200 hover:border-gray-300 bg-white"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-sm text-gray-900">{voice.name}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        voice.gender === "Female"
+                          ? "bg-pink-100 text-pink-700"
+                          : "bg-blue-100 text-blue-700"
+                      }`}>
+                        {voice.gender}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1">{voice.style}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
