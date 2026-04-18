@@ -52,7 +52,6 @@ export default function ChatPage() {
 
     socket.on("users:online", (users) => setOnlineUsers(users));
 
-    // ✅ Message received from other user
     socket.on("message:receive", async (message) => {
       const chat = activeChatRef.current;
       if (chat && message.chatId === chat.chatId) {
@@ -60,16 +59,13 @@ export default function ChatPage() {
           const exists = prev.some((m) => m._id === message._id);
           return exists ? prev : [...prev, message];
         });
-        // Auto mark as read since user is viewing this chat
         await fetch(`/api/chat/read/${chat.chatId}`, { method: "POST" });
         fetchRecentChats();
       } else {
-        // Not viewing this chat — just refresh sidebar for unread badge
         fetchRecentChats();
       }
     });
 
-    // ✅ Recipient gets notified of new chat appearing in their sidebar
     socket.on("chat:newMessage", () => {
       fetchRecentChats();
     });
@@ -100,7 +96,6 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // ✅ Open chat + mark messages as read
   const openChat = async (otherUser, chatId = null) => {
     setMsgLoading(true);
     try {
@@ -127,15 +122,26 @@ export default function ChatPage() {
       const msgData = await msgRes.json();
       setMessages(msgData.messages || []);
 
-      // ✅ Mark all messages as read when opening chat
       await fetch(`/api/chat/read/${resolvedChatId}`, { method: "POST" });
 
-      fetchRecentChats(); // clears unread badge
+      fetchRecentChats();
     } catch (err) {
       console.error(err);
     } finally {
       setMsgLoading(false);
     }
+  };
+
+  // ── Close active chat ──
+  const closeChat = () => {
+    if (activeChatRef.current) {
+      socketRef.current?.emit("chat:leave", activeChatRef.current.chatId);
+    }
+    setActiveChat(null);
+    setMessages([]);
+    setNewMessage("");
+    setIsTyping(false);
+    setTypingUser("");
   };
 
   const sendMessage = async () => {
@@ -155,7 +161,6 @@ export default function ChatPage() {
       const data = await res.json();
       if (data.message) {
         setMessages((prev) => [...prev, data.message]);
-        // ✅ Pass recipientId so server notifies their sidebar
         socketRef.current?.emit("message:send", {
           chatId: activeChat.chatId,
           recipientId: activeChat.otherUser._id,
@@ -214,6 +219,20 @@ export default function ChatPage() {
     openChat(searchResult);
   };
 
+  const openFindDialog = () => {
+    setShowFindDialog(true);
+    setSearchResult(null);
+    setSearchError("");
+    setSearchEmail("");
+  };
+
+  const closeFindDialog = () => {
+    setShowFindDialog(false);
+    setSearchResult(null);
+    setSearchError("");
+    setSearchEmail("");
+  };
+
   const formatTime = (date) => {
     if (!date) return "";
     return new Date(date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -232,20 +251,11 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-[calc(100vh-64px)] bg-white rounded-xl border border-gray-200 overflow-hidden">
+
       {/* ── Sidebar ── */}
       <div className="w-80 border-r border-gray-200 flex flex-col flex-shrink-0">
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Messages</h2>
-          <button
-            onClick={() => { setShowFindDialog(true); setSearchResult(null); setSearchError(""); setSearchEmail(""); }}
-            className="p-2 hover:bg-gray-100 rounded-lg transition"
-            title="Find user"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="11" cy="11" r="8" />
-              <path d="M21 21l-4.35-4.35" />
-            </svg>
-          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -255,7 +265,7 @@ export default function ChatPage() {
                 <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
               </svg>
               <p className="text-sm">No conversations yet</p>
-              <button onClick={() => setShowFindDialog(true)} className="mt-3 text-sm text-gray-900 font-medium underline">
+              <button onClick={openFindDialog} className="mt-3 text-sm text-gray-900 font-medium underline">
                 Find someone to chat with
               </button>
             </div>
@@ -287,7 +297,6 @@ export default function ChatPage() {
                     <p className="text-xs text-gray-500 truncate">
                       {rc.lastMessage?.content || "No messages yet"}
                     </p>
-                    {/* ✅ Unread badge — clears after opening chat */}
                     {rc.unreadCount > 0 && (
                       <span className="ml-2 flex-shrink-0 bg-gray-900 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                         {rc.unreadCount}
@@ -303,41 +312,82 @@ export default function ChatPage() {
 
       {/* ── Chat Area ── */}
       <div className="flex-1 flex flex-col">
+
         {!activeChat ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="mb-4 opacity-30">
-              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
-            </svg>
-            <p className="text-lg font-medium">Select a conversation</p>
-            <p className="text-sm mt-1">or find someone new to chat with</p>
-            <button
-              onClick={() => setShowFindDialog(true)}
-              className="mt-4 px-5 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition"
-            >
-              Find User
-            </button>
+          /* ── Empty state with Find User button top-right ── */
+          <div className="flex-1 flex flex-col">
+            {/* Top bar with Find User button */}
+            <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-end bg-white min-h-[57px]">
+              <button
+                onClick={openFindDialog}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="M21 21l-4.35-4.35" />
+                </svg>
+                Find User
+              </button>
+            </div>
+
+            <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+              <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="mb-4 opacity-30">
+                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+              </svg>
+              <p className="text-lg font-medium">Select a conversation</p>
+              <p className="text-sm mt-1">or find someone new to chat with</p>
+            </div>
           </div>
         ) : (
           <>
-            {/* Chat Header */}
-            <div className="px-5 py-3 border-b border-gray-200 flex items-center gap-3 bg-white">
-              <div className="relative">
-                <div className="w-10 h-10 rounded-full bg-gray-900 text-white flex items-center justify-center font-semibold text-sm">
-                  {activeChat.otherUser?.name?.[0]?.toUpperCase()}
-                </div>
-                {isOnline(activeChat.otherUser?._id) && (
-                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white rounded-full" />
-                )}
-              </div>
-              <div>
-                <p className="font-semibold text-gray-900 text-sm">{activeChat.otherUser?.name}</p>
-                <p className="text-xs text-gray-400">
-                  {isOnline(activeChat.otherUser?._id) ? (
-                    <span className="text-green-500">Online</span>
-                  ) : (
-                    activeChat.otherUser?.email
+            {/* ── Chat Header with Close button & Find User button ── */}
+            <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between bg-white">
+              {/* Left: user info */}
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <div className="w-10 h-10 rounded-full bg-gray-900 text-white flex items-center justify-center font-semibold text-sm">
+                    {activeChat.otherUser?.name?.[0]?.toUpperCase()}
+                  </div>
+                  {isOnline(activeChat.otherUser?._id) && (
+                    <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-white rounded-full" />
                   )}
-                </p>
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900 text-sm">{activeChat.otherUser?.name}</p>
+                  <p className="text-xs text-gray-400">
+                    {isOnline(activeChat.otherUser?._id) ? (
+                      <span className="text-green-500">Online</span>
+                    ) : (
+                      activeChat.otherUser?.email
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {/* Right: Find User + Close buttons */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={openFindDialog}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition"
+                  title="Find User"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="M21 21l-4.35-4.35" />
+                  </svg>
+                  Find User
+                </button>
+
+                <button
+                  onClick={closeChat}
+                  className="p-1.5 hover:bg-gray-100 rounded-lg transition text-gray-500 hover:text-gray-800"
+                  title="Close chat"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
               </div>
             </div>
 
@@ -418,12 +468,18 @@ export default function ChatPage() {
 
       {/* ── Find User Dialog ── */}
       {showFindDialog && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={closeFindDialog}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-5">
               <h3 className="text-lg font-semibold text-gray-900">Find User</h3>
               <button
-                onClick={() => { setShowFindDialog(false); setSearchResult(null); setSearchError(""); }}
+                onClick={closeFindDialog}
                 className="p-1 hover:bg-gray-100 rounded-lg"
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -474,6 +530,15 @@ export default function ChatPage() {
                 </button>
               </div>
             )}
+
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={closeFindDialog}
+                className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-100 transition"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
