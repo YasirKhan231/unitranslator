@@ -1,4 +1,3 @@
-// models/Note.js
 import mongoose from "mongoose";
 
 const NoteSchema = new mongoose.Schema({
@@ -7,13 +6,16 @@ const NoteSchema = new mongoose.Schema({
     ref: "User",
     required: true,
   },
-  title: String,
-  content: String,
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
+  title: { type: String, required: true },
+  content: { type: String, default: "" },
+  tags: { type: [String], default: [] },
+  color: { type: String, default: "white" },
+  pinned: { type: Boolean, default: false },
+  priority: { type: String, enum: ["low", "medium", "high"], default: "low" },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
 });
 
-export default mongoose.models.Note ||
-  mongoose.model("Note", NoteSchema);
+// ✅ removed pre hook entirely — updatedAt is handled in the PUT route directly
+delete mongoose.models.Note; // ✅ clears stale cached model
+export default mongoose.model("Note", NoteSchema);

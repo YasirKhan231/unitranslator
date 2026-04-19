@@ -32,9 +32,9 @@ const menuItems = [
         />
       )}
       
-      <div className={`fixed md:relative z-50 h-screen transition-all duration-300 ${
+      <div className={`fixed top-0 left-0 z-50 h-screen transition-all duration-300 ${
         open ? "w-64" : "w-0 md:w-20"
-      } bg-white border-r border-gray-200 shadow-sm overflow-hidden`}>
+      } bg-white border-r border-gray-200 shadow-sm overflow-hidden flex flex-col`}>
         <div className="p-6">
           <div className="mb-8">
             <h1 className={`text-xl font-bold text-gray-900 ${!open && "md:hidden"}`}>

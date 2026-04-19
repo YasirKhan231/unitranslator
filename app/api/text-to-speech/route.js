@@ -17,7 +17,7 @@ export async function POST(req) {
   if (text.length > 5000) {
     return NextResponse.json({ error: "Text too long. Max 5000 characters." }, { status: 400 });
   }
-
+console.log("KEY:", process.env.ELEVENLABS_API_KEY?.slice(0, 8)); // logs first 8 chars only
   try {
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
@@ -40,6 +40,8 @@ export async function POST(req) {
 
     if (!response.ok) {
       const err = await response.json();
+        console.log("ELEVENLABS ERROR:", JSON.stringify(err)); // ADD THIS
+
       if (response.status === 401) {
         return NextResponse.json({ error: "Invalid ElevenLabs API key." }, { status: 401 });
       }

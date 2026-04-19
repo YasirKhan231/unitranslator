@@ -27,7 +27,9 @@ export default function DashboardLayout({ children }) {
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar open={sidebarOpen} setOpen={setSidebarOpen} isMobile={isMobile} />
       
-      <div className="flex-1">
+      <div className={`flex-1 transition-all duration-300 ${
+        sidebarOpen ? "md:ml-64" : "md:ml-20"
+      }`}>
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
           className="md:hidden fixed top-4 left-4 z-50 p-2 bg-white rounded-lg shadow-md hover:bg-gray-100 transition"

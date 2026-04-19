@@ -193,7 +193,7 @@ export default function Dashboard() {
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Tips</h2>
         <ul className="space-y-2 text-gray-600">
-          <li>✨ Translate text between 100+ languages</li>
+          <li>✨ Translate text between 25+ languages</li>
           <li>📝 Save important translations as notes</li>
           <li>⚡ Fast and accurate translations</li>
           <li>🔄 Click on any translation to copy it</li>
